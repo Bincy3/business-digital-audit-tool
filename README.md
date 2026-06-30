@@ -157,13 +157,9 @@ python app.py
 
 ## Screenshots
 
-Add screenshots in the `screenshots/` folder after running the application.
+### Audit Report
 
-Suggested screenshots:
-
-- `screenshots/home.png`
-- `screenshots/dashboard.png`
-- `screenshots/error.png`
+![Audit Report](screenshots/ssreport.png)
 
 ## Sample Output
 
