@@ -1,6 +1,24 @@
 import requests
 import re
 import validators
+from urllib.parse import urljoin
+
+
+REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0 Safari/537.36"
+    )
+}
+
+CATEGORY_MAX_SCORES = {
+    "SEO": 30,
+    "Contact Readiness": 20,
+    "Social Presence": 15,
+    "Technical Basics": 25,
+    "Conversion Readiness": 10,
+}
 
 
 def is_valid_url(url):
@@ -8,18 +26,10 @@ def is_valid_url(url):
 
 
 def fetch_website(url, timeout=10):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/137.0 Safari/537.36"
-        )
-    }
-
     try:
         response = requests.get(
             url,
-            headers=headers,
+            headers=REQUEST_HEADERS,
             timeout=timeout,
             allow_redirects=True
         )
@@ -60,24 +70,21 @@ def images_without_alt(soup):
     return imgs
 
 
-def has_sitemap(base_url):
-    if not base_url.endswith("/"):
-        base_url = base_url + "/"
+def resource_exists(base_url, path):
     try:
-        r = requests.get(base_url + "sitemap.xml", timeout=6)
-        return r.status_code == 200
+        url = urljoin(base_url.rstrip("/") + "/", path)
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=6)
+        return response.status_code == 200
     except requests.RequestException:
         return False
+
+
+def has_sitemap(base_url):
+    return resource_exists(base_url, "sitemap.xml")
 
 
 def has_robots(base_url):
-    if not base_url.endswith("/"):
-        base_url = base_url + "/"
-    try:
-        r = requests.get(base_url + "robots.txt", timeout=6)
-        return r.status_code == 200
-    except requests.RequestException:
-        return False
+    return resource_exists(base_url, "robots.txt")
 
 
 def get_open_graph(soup):
@@ -99,6 +106,29 @@ def get_open_graph(soup):
 def has_viewport(soup):
     tag = soup.find("meta", attrs={"name": "viewport"})
     return bool(tag and tag.get("content"))
+
+
+def has_conversion_cta(soup):
+    cta_words = (
+        "contact",
+        "book",
+        "call",
+        "quote",
+        "schedule",
+        "buy",
+        "shop",
+        "enquire",
+        "inquire",
+        "get started",
+    )
+
+    for tag in soup.find_all(["a", "button"]):
+        text = tag.get_text(" ", strip=True).lower()
+        href = tag.get("href", "").lower()
+        if any(word in text or word in href for word in cta_words):
+            return True
+
+    return False
 
 
 def get_social_links(soup):
@@ -159,45 +189,15 @@ def https_enabled(url):
     return url.lower().startswith("https://")
 
 
-def calculate_scores(soup, html, website, social, emails, phones):
-    # Scoring weights
-    scores = {
-        "SEO": 0,
-        "Contact": 0,
-        "Social": 0,
-        "Technical": 0,
-        "Conversion": 0
-    }
+def calculate_scores(checks):
+    scores = {category: 0 for category in CATEGORY_MAX_SCORES}
 
-    # SEO (30): title(10), meta(10), h1(5), viewport(5)
-    scores["SEO"] += 10 if get_title(soup) != "Not Found" else 0
-    scores["SEO"] += 10 if get_meta_description(soup) != "Missing" else 0
-    scores["SEO"] += 5 if get_h1(soup) != "Not Found" else 0
-    scores["SEO"] += 5 if has_viewport(soup) else 0
-
-    # Contact readiness (20): email(10), phone(10)
-    scores["Contact"] += 10 if emails != ["Not Found"] else 0
-    scores["Contact"] += 10 if phones != ["Not Found"] else 0
-
-    # Social presence (20): any social link
-    scores["Social"] += 20 if social != ["Not Found"] else 0
-
-    # Technical basics (20): HTTPS(10), sitemap(5), robots(5)
-    scores["Technical"] += 10 if https_enabled(website) else 0
-    scores["Technical"] += 5 if has_sitemap(website) else 0
-    scores["Technical"] += 5 if has_robots(website) else 0
-
-    # Conversion readiness (10): images alt (5), OG tags (5)
-    imgs_missing = images_without_alt(soup)
-    scores["Conversion"] += 5 if len(imgs_missing) == 0 else 0
-    og, missing_og = get_open_graph(soup)
-    scores["Conversion"] += 5 if len(missing_og) == 0 else 0
-
-    total = sum(scores.values())
+    for check in checks:
+        if check["passed"]:
+            scores[check["category"]] += check["points"]
 
     return {
         "categories": scores,
-        "total": total,
-        "missing_images": imgs_missing,
-        "missing_og": missing_og
+        "max_scores": CATEGORY_MAX_SCORES,
+        "total": sum(scores.values()),
     }
