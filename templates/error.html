@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | Business Digital Audit Tool</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body class="error-page">
+  <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
+    <div class="container">
+      <a class="navbar-brand fw-bold" href="/">
+        <i class="bi bi-bar-chart-line-fill me-2"></i>Digital Audit Pro
+      </a>
+    </div>
+  </nav>
+
+  <main class="container error-shell">
+    <div class="error-card text-center">
+      <div class="error-icon mx-auto">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+      </div>
+      <h1 class="h2 mt-4">{{ title }}</h1>
+      {% if status_code %}
+        <p class="text-muted mb-2">HTTP status: {{ status_code }}</p>
+      {% endif %}
+      <p class="lead text-muted">{{ message }}</p>
+      <a href="{{ action_url }}" class="btn btn-primary btn-lg mt-3">
+        <i class="bi bi-arrow-left me-2"></i>{{ action_label }}
+      </a>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
