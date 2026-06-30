@@ -173,6 +173,9 @@ python app.py
 ### Recommendations
 ![Recommendations](screenshots/d4.png)
 
+### Complete Audit Report
+![Complete Audit Report](screenshots/testcollage.png)
+
 ## Sample Output
 
 ```text
