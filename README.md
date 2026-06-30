@@ -37,8 +37,9 @@ A production-ready Flask web application that audits a business website and pres
   - CTA, newsletter, and contact page detection
 - Automatically generated recommendations based on failed checks.
 - Report exports:
-  - `reports/report.html`
-  - `reports/report.txt`
+  - saved timestamped HTML reports in `reports/`
+  - saved timestamped TXT reports in `reports/`
+- Audit history stored in SQLite with business name, site, score, timestamp, and filenames.
 
 ## Folder Structure
 

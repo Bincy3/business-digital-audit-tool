@@ -18,6 +18,7 @@ dist/
 
 reports/*.html
 reports/*.txt
+audit_history.db
 sample_report.html
 sample_report.txt
 *.log

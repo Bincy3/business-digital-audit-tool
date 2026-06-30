@@ -2,28 +2,20 @@ from pathlib import Path
 
 from flask import render_template
 
-
-REPORTS_DIR = Path("reports")
-HTML_REPORT_PATH = REPORTS_DIR / "report.html"
-TEXT_REPORT_PATH = REPORTS_DIR / "report.txt"
+from database import REPORTS_DIR, add_audit, build_report_filenames
 
 
-def ensure_reports_dir() -> None:
-    REPORTS_DIR.mkdir(exist_ok=True)
+REPORTS_DIR.mkdir(exist_ok=True)
 
 
-def save_reports(result: dict) -> None:
-    ensure_reports_dir()
-    save_html_report(result)
-    save_text_report(result)
+def save_reports(result: dict) -> dict:
+    html_filename, txt_filename = build_report_filenames(result["business_name"])
+    html_path = REPORTS_DIR / html_filename
+    txt_path = REPORTS_DIR / txt_filename
 
-
-def save_html_report(result: dict) -> None:
     html = render_template("report.html", result=result, saved_report=True)
-    HTML_REPORT_PATH.write_text(html, encoding="utf-8")
+    html_path.write_text(html, encoding="utf-8")
 
-
-def save_text_report(result: dict) -> None:
     lines = [
         "BUSINESS DIGITAL AUDIT REPORT",
         "=" * 60,
@@ -62,4 +54,19 @@ def save_text_report(result: dict) -> None:
     else:
         lines.append("- Strong audit result. Continue monitoring performance and conversion quality.")
 
-    TEXT_REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
+    txt_path.write_text("\n".join(lines), encoding="utf-8")
+
+    audit_id = add_audit(
+        result["business_name"],
+        result["website_url"],
+        result["overall_score"],
+        html_filename,
+        txt_filename,
+        "Complete",
+    )
+
+    return {
+        "html_filename": html_filename,
+        "txt_filename": txt_filename,
+        "audit_id": audit_id,
+    }
