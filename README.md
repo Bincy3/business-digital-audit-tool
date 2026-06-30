@@ -157,9 +157,20 @@ python app.py
 
 ## Screenshots
 
-### Audit Report
+### Home Page
+![Home Page](screenshots/d1.png)
 
-![Audit Report](screenshots/ssreport.png)
+### Audit Form
+![Audit Form](screenshots/d2.png)
+
+### Dashboard
+![Dashboard](screenshots/dashbord.png)
+
+### Audit Results
+![Audit Results](screenshots/d3.png)
+
+### Recommendations
+![Recommendations](screenshots/d4.png)
 
 ## Sample Output
 
