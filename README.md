@@ -188,11 +188,11 @@ python app.py
 ### Audit History Dashboard
 ![Audit History Dashboard](screenshots/hist3.png)
 
-### Complete Audit Report
-![Complete Audit Report](screenshots/d3.png)
+### First Audit Report
+![Complete Audit Report](screenshots/result.png)
 
-### Recommendations Section
-![Recommendations Section](screenshots/d4.png)
+### History Last Section
+![Recommendations Section](screenshots/hist2.png)
 
 ## Sample Output
 
