@@ -159,22 +159,40 @@ python app.py
 ## Screenshots
 
 ### Home Page
-![Home Page](screenshots/d1.png)
+![Home Page](screenshots/home.png)
 
-### Audit Form
-![Audit Form](screenshots/d2.png)
+### About Page
+![About Page](screenshots/about.png)
 
-### Dashboard
-![Dashboard](screenshots/dashbord.png)
+### Generate Audit
+![Generate Audit](screenshots/h2.png)
 
-### Audit Results
-![Audit Results](screenshots/d3.png)
+### Audit Dashboard
+![Audit Dashboard](screenshots/h3.png)
 
-### Recommendations
-![Recommendations](screenshots/d4.png)
+### Audit Results - Overview
+![Audit Results Overview](screenshots/res2.png)
+
+### Audit Results - Checklist
+![Audit Checklist](screenshots/res3.png)
+
+### Recommendations & Security Headers
+![Recommendations](screenshots/res4.png)
+
+### WhatsApp Message & Action Panel
+![WhatsApp Message](screenshots/res5.png)
+
+### Saved Audit History
+![Audit History](screenshots/history.png)
+
+### Audit History Dashboard
+![Audit History Dashboard](screenshots/hist3.png)
 
 ### Complete Audit Report
-![Complete Audit Report](screenshots/testcollage.png)
+![Complete Audit Report](screenshots/d3.png)
+
+### Recommendations Section
+![Recommendations Section](screenshots/d4.png)
 
 ## Sample Output
 

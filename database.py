@@ -1,8 +1,9 @@
+import json
 import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = Path("audit_history.db")
 REPORTS_DIR = Path("reports")
@@ -28,6 +29,24 @@ def _connect() -> sqlite3.Connection:
         raise DatabaseError("Unable to open the audit history database.") from exc
 
 
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    cursor = conn.execute("PRAGMA table_info(audits)")
+    columns = {row[1] for row in cursor.fetchall()}
+    schema = [
+        ("industry", "TEXT"),
+        ("seo_score", "INTEGER"),
+        ("technical_basics_score", "INTEGER"),
+        ("social_presence_score", "INTEGER"),
+        ("contact_readiness_score", "INTEGER"),
+        ("conversion_readiness_score", "INTEGER"),
+        ("recommendations", "TEXT"),
+        ("whatsapp_message", "TEXT"),
+    ]
+    for column_name, column_def in schema:
+        if column_name not in columns:
+            conn.execute(f"ALTER TABLE audits ADD COLUMN {column_name} {column_def}")
+
+
 def init_db() -> None:
     conn = _connect()
     try:
@@ -36,15 +55,24 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS audits (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 business_name TEXT NOT NULL,
+                industry TEXT,
                 website_url TEXT NOT NULL,
                 overall_score INTEGER NOT NULL,
+                seo_score INTEGER,
+                technical_basics_score INTEGER,
+                social_presence_score INTEGER,
+                contact_readiness_score INTEGER,
+                conversion_readiness_score INTEGER,
                 audit_time TEXT NOT NULL,
                 html_filename TEXT NOT NULL,
                 txt_filename TEXT NOT NULL,
+                recommendations TEXT,
+                whatsapp_message TEXT,
                 status TEXT NOT NULL
             )
             """
         )
+        _ensure_columns(conn)
         conn.commit()
     except sqlite3.Error as exc:
         raise DatabaseError("Could not initialize the audit history database.") from exc
@@ -68,12 +96,40 @@ def build_report_filenames(business_name: str) -> Tuple[str, str]:
     return html_filename, txt_filename
 
 
+def _serialize_recommendations(recommendations: Any) -> Optional[str]:
+    if recommendations is None:
+        return None
+    if isinstance(recommendations, str):
+        return recommendations
+    return json.dumps(list(recommendations))
+
+
+def _deserialize_recommendations(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return [str(value)]
+    if isinstance(parsed, list):
+        return [str(item) for item in parsed]
+    return [str(parsed)]
+
+
 def add_audit(
     business_name: str,
+    industry: str,
     website_url: str,
     overall_score: int,
+    seo_score: int,
+    technical_basics_score: int,
+    social_presence_score: int,
+    contact_readiness_score: int,
+    conversion_readiness_score: int,
     html_filename: str,
     txt_filename: str,
+    recommendations: Optional[List[str]],
+    whatsapp_message: str,
     status: str,
 ) -> int:
     init_db()
@@ -84,21 +140,37 @@ def add_audit(
             """
             INSERT INTO audits (
                 business_name,
+                industry,
                 website_url,
                 overall_score,
+                seo_score,
+                technical_basics_score,
+                social_presence_score,
+                contact_readiness_score,
+                conversion_readiness_score,
                 audit_time,
                 html_filename,
                 txt_filename,
+                recommendations,
+                whatsapp_message,
                 status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 business_name,
+                industry,
                 website_url,
                 overall_score,
+                seo_score,
+                technical_basics_score,
+                social_presence_score,
+                contact_readiness_score,
+                conversion_readiness_score,
                 audit_time,
                 html_filename,
                 txt_filename,
+                _serialize_recommendations(recommendations),
+                whatsapp_message,
                 status,
             ),
         )
@@ -114,12 +186,33 @@ def get_audit(audit_id: int) -> Optional[Dict]:
     init_db()
     conn = _connect()
     try:
-        row = conn.execute(
-            "SELECT * FROM audits WHERE id = ?", (audit_id,)
-        ).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT * FROM audits WHERE id = ?", (audit_id,)).fetchone()
+        if not row:
+            return None
+        audit = dict(row)
+        audit["recommendations"] = _deserialize_recommendations(audit.get("recommendations"))
+        return audit
     except sqlite3.Error as exc:
         raise DatabaseError("Unable to read an audit history record.") from exc
+    finally:
+        conn.close()
+
+
+def update_audit(audit_id: int, **fields: Any) -> bool:
+    init_db()
+    conn = _connect()
+    try:
+        if not fields:
+            return False
+        if "recommendations" in fields:
+            fields["recommendations"] = _serialize_recommendations(fields["recommendations"])
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        values = list(fields.values()) + [audit_id]
+        cursor = conn.execute(f"UPDATE audits SET {assignments} WHERE id = ?", values)
+        conn.commit()
+        return cursor.rowcount > 0
+    except sqlite3.Error as exc:
+        raise DatabaseError("Could not update the audit history record.") from exc
     finally:
         conn.close()
 
@@ -199,6 +292,8 @@ def list_audits(
         )
         rows = conn.execute(query, (*params, page_size, offset)).fetchall()
         audits = [dict(row) for row in rows]
+        for audit in audits:
+            audit["recommendations"] = _deserialize_recommendations(audit.get("recommendations"))
         return audits, total
     except sqlite3.Error as exc:
         raise DatabaseError("Could not query audit history.") from exc

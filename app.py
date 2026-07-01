@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path
 
 from flask import (
     Flask,
@@ -21,6 +20,7 @@ from database import (
     get_history_stats,
     init_db,
     list_audits,
+    update_audit,
 )
 from report import save_reports
 from utils import AuditError
@@ -28,9 +28,18 @@ from utils import AuditError
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@app.after_request
+def add_no_store_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 try:
@@ -41,7 +50,20 @@ except DatabaseError as error:
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    try:
+        stats = get_history_stats()
+        recent_audits, _ = list_audits(page=1, page_size=5, sort_by="audit_time", order="desc")
+    except DatabaseError as error:
+        logger.exception("Dashboard data could not be loaded: %s", error)
+        stats = {
+            "total_audits": 0,
+            "average_score": 0,
+            "highest_score": 0,
+            "lowest_score": 0,
+            "last_audit_date": None,
+        }
+        recent_audits = []
+    return render_template("index.html", stats=stats, recent_audits=recent_audits)
 
 
 @app.route("/about", methods=["GET"])
@@ -73,6 +95,7 @@ def generate_audit():
         result["html_filename"] = saved["html_filename"]
         result["txt_filename"] = saved["txt_filename"]
         result["audit_id"] = saved["audit_id"]
+        result["whatsapp_message"] = saved.get("whatsapp_message", "")
         return render_template(
             "report.html",
             result=result,
@@ -123,6 +146,7 @@ def generate_audit():
 
 
 @app.route("/history", methods=["GET"])
+@app.route("/saved-audits", methods=["GET"])
 def audit_history():
     search_business = request.args.get("search_business", "")
     search_website = request.args.get("search_website", "")
@@ -130,7 +154,7 @@ def audit_history():
     sort_by = request.args.get("sort_by", "audit_time")
     order = request.args.get("order", "desc")
     page = int(request.args.get("page", 1))
-    page_size = 20
+    page_size = 8
 
     try:
         audits, total = list_audits(
@@ -156,7 +180,7 @@ def audit_history():
             500,
         )
 
-    total_pages = (total + page_size - 1) // page_size
+    total_pages = max((total + page_size - 1) // page_size, 1)
     return render_template(
         "history.html",
         audits=audits,
@@ -170,6 +194,61 @@ def audit_history():
         order=order,
         stats=stats,
     )
+
+
+@app.route("/edit-audit/<int:audit_id>", methods=["GET", "POST"])
+def edit_audit(audit_id):
+    try:
+        audit_record = get_audit(audit_id)
+    except DatabaseError as error:
+        logger.exception("Unable to load audit record for editing: %s", error)
+        abort(500)
+
+    if not audit_record:
+        abort(404)
+
+    if request.method == "POST":
+        data = {
+            "business_name": request.form.get("business_name", "").strip(),
+            "industry": request.form.get("industry", "").strip(),
+            "website_url": request.form.get("website_url", "").strip(),
+            "status": request.form.get("status", "Complete").strip(),
+            "recommendations": [
+                item.strip()
+                for item in request.form.get("recommendations", "").split("\n")
+                if item.strip()
+            ],
+            "whatsapp_message": request.form.get("whatsapp_message", "").strip(),
+        }
+        try:
+            updated = update_audit(audit_id, **data)
+        except DatabaseError as error:
+            logger.exception("Audit update failed: %s", error)
+            return (
+                render_template(
+                    "error.html",
+                    title="Update Failed",
+                    message="We could not update the saved audit. Please try again.",
+                    action_label="Back to Audit History",
+                    action_url="/history",
+                ),
+                500,
+            )
+
+        if not updated:
+            return (
+                render_template(
+                    "error.html",
+                    title="Audit Not Found",
+                    message="The selected audit could not be updated.",
+                    action_label="Back to Audit History",
+                    action_url="/history",
+                ),
+                404,
+            )
+        return redirect(url_for("audit_history"))
+
+    return render_template("edit_audit.html", audit=audit_record)
 
 
 @app.route("/view-report/<int:audit_id>", methods=["GET"])
