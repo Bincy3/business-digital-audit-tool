@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
-import validators
 from bs4 import BeautifulSoup
 
 
@@ -66,18 +65,70 @@ def _is_blocked_ip(address: ipaddress._BaseAddress) -> bool:
         or address.is_reserved
         or address.is_private
         or address.is_unspecified
+        or address == ipaddress.ip_address("255.255.255.255")
     )
 
 
-def _validate_host(host: str) -> None:
-    normalized_host = (host or "").strip().rstrip(".").lower()
-    if not normalized_host:
+def _blocked_ip_message(address: ipaddress._BaseAddress) -> str:
+    if address.is_loopback or address.is_unspecified:
+        return "Localhost addresses are not allowed."
+    if address.is_private or address.is_link_local or address.is_reserved or address.is_multicast:
+        return "Private network addresses are blocked."
+    return "Blocked network address."
+
+
+def is_safe_ip(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return not _is_blocked_ip(address)
+
+
+def is_safe_hostname(hostname: str) -> bool:
+    if not hostname:
+        return False
+    normalized = (hostname or "").strip().rstrip(".").lower()
+    if not normalized or normalized in {"localhost", "localhost.localdomain"}:
+        return False
+    return is_safe_ip(normalized) or not _looks_like_ip_literal(normalized)
+
+
+def _looks_like_ip_literal(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def is_safe_url(url: str) -> bool:
+    try:
+        validate_safe_url(url)
+    except AuditError:
+        return False
+    return True
+
+
+def validate_safe_url(url: str) -> str:
+    if not url:
+        raise AuditError("Invalid URL", "Please enter a website URL.")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise AuditError("Invalid URL", "Unsupported URL scheme.")
+    if not parsed.netloc:
+        raise AuditError("Invalid URL", "Please enter a complete website URL.")
+
+    hostname = parsed.hostname
+    if not hostname:
         raise AuditError("Invalid URL", "The website URL is missing a hostname.")
+
+    normalized_host = (hostname or "").strip().rstrip(".").lower()
     if normalized_host in {"localhost", "localhost.localdomain"}:
-        raise AuditError(
-            "Invalid URL",
-            "Localhost URLs are not permitted for security reasons.",
-        )
+        raise AuditError("Invalid URL", "Localhost addresses are not allowed.")
 
     try:
         parsed_ip = ipaddress.ip_address(normalized_host)
@@ -86,19 +137,17 @@ def _validate_host(host: str) -> None:
 
     if parsed_ip is not None:
         if _is_blocked_ip(parsed_ip):
-            raise AuditError(
-                "Invalid URL",
-                "The provided URL points to a blocked internal or local address.",
-            )
-        return
+            raise AuditError("Invalid URL", _blocked_ip_message(parsed_ip))
+        return parsed.geturl()
 
     try:
-        resolved_addresses = socket.getaddrinfo(normalized_host, None, proto=socket.IPPROTO_TCP)
+        resolved_addresses = socket.getaddrinfo(
+            normalized_host,
+            None,
+            proto=socket.IPPROTO_TCP,
+        )
     except socket.gaierror as exc:
-        raise AuditError(
-            "Invalid URL",
-            "We could not resolve the website host to a safe public address.",
-        ) from exc
+        raise AuditError("Invalid URL", "The hostname could not be resolved safely.") from exc
 
     for _, _, _, _, sockaddr in resolved_addresses:
         ip_address = sockaddr[0]
@@ -107,30 +156,8 @@ def _validate_host(host: str) -> None:
         except ValueError:
             continue
         if _is_blocked_ip(resolved_ip):
-            raise AuditError(
-                "Invalid URL",
-                "The hostname resolves to a blocked internal or local address.",
-            )
+            raise AuditError("Invalid URL", _blocked_ip_message(resolved_ip))
 
-
-def validate_url(url: str) -> str:
-    if not url:
-        raise AuditError("Invalid URL", "Please enter a website URL.")
-
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise AuditError(
-            "Invalid URL",
-            "Please enter a safe HTTP or HTTPS website URL.",
-        )
-    if not parsed.netloc:
-        raise AuditError("Invalid URL", "Please enter a complete website URL.")
-
-    hostname = parsed.hostname
-    if not hostname:
-        raise AuditError("Invalid URL", "The website URL is missing a hostname.")
-
-    _validate_host(hostname)
     return parsed.geturl()
 
 
@@ -142,25 +169,35 @@ def normalize_url(url: str) -> str:
 
 
 def is_valid_url(url: str) -> bool:
-    try:
-        validate_url(url)
-    except AuditError:
-        return False
-    return True
+    return is_safe_url(url)
 
 
-def _safe_request(url: str, *, method: str = "GET", timeout: int = REQUEST_TIMEOUT, allow_redirects: bool = True):
-    current_url = validate_url(url)
+def _safe_request(
+    url: str,
+    *,
+    method: str = "GET",
+    timeout: int = REQUEST_TIMEOUT,
+    allow_redirects: bool = True,
+):
+    current_url = validate_safe_url(url)
     session = requests.Session()
     redirect_count = 0
     while True:
-        response = session.request(
-            method,
-            current_url,
-            headers=REQUEST_HEADERS,
-            timeout=timeout,
-            allow_redirects=False,
-        )
+        if method.upper() == "GET":
+            response = session.get(
+                current_url,
+                headers=REQUEST_HEADERS,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        else:
+            response = session.request(
+                method,
+                current_url,
+                headers=REQUEST_HEADERS,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         response.url = current_url
         if not allow_redirects:
             return response
@@ -168,14 +205,21 @@ def _safe_request(url: str, *, method: str = "GET", timeout: int = REQUEST_TIMEO
             redirect_count += 1
             if redirect_count > 5:
                 raise AuditError(
-                    "Too Many Redirects",
+                    "Unsafe Redirect",
                     "The website redirected too many times, so the audit was stopped for safety.",
                 )
             location = response.headers.get("Location")
             if not location:
                 return response
-            current_url = urljoin(current_url, location)
-            validate_url(current_url)
+            next_url = urljoin(current_url, location)
+            try:
+                validate_safe_url(next_url)
+            except AuditError as exc:
+                raise AuditError(
+                    "Unsafe Redirect",
+                    "The website redirected to a blocked internal address.",
+                ) from exc
+            current_url = next_url
             continue
         return response
 

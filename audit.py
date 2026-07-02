@@ -25,8 +25,8 @@ from utils import (
     has_viewport,
     https_enabled,
     images_without_alt,
-    is_valid_url,
     normalize_url,
+    validate_safe_url,
 )
 
 
@@ -38,11 +38,7 @@ def audit_website(business_name: str, industry: str, website_url: str) -> dict:
     """Run a complete digital audit and return dashboard-ready data."""
 
     website_url = normalize_url(website_url)
-    if not is_valid_url(website_url):
-        raise AuditError(
-            "Invalid URL",
-            "Please enter a valid website URL such as https://example.com.",
-        )
+    validate_safe_url(website_url)
 
     fetched = fetch_website(website_url)
     response = fetched["response"]
