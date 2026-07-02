@@ -41,6 +41,26 @@ A production-ready Flask web application that audits a business website and pres
   - saved timestamped TXT reports in `reports/`
 - Audit history stored in SQLite with business name, site, score, timestamp, and filenames.
 
+## Scoring Logic
+
+The audit score is divided into five categories:
+
+- SEO
+- Technical Basics
+- Contact Readiness
+- Social Presence
+- Conversion Readiness
+
+Each individual check contributes points to its category. Passing checks add their configured points, while missing checks do not. The final score is calculated by summing all earned points across categories and comparing them against the maximum available score of 100.
+
+## Security
+
+The application validates every submitted URL before any outbound HTTP request is made. Blocked targets include localhost, private IP ranges, loopback addresses, internal networks, file URLs, data URLs, ftp URLs, javascript URLs, and unsafe redirects. These protections reduce the risk of Server-Side Request Forgery (SSRF) by preventing the audit engine from reaching internal services or other unsafe destinations.
+
+## Development Notes
+
+The core Flask application, audit engine, SQLite history storage, report generation, and Bootstrap-based UI were implemented by me. Some debugging, documentation improvements, UI refinements, and code suggestions were assisted by AI coding tools. I reviewed, integrated, tested, and validated every change before finalizing the project.
+
 ## Folder Structure
 
 ```text

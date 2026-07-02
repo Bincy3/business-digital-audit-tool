@@ -5,8 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-DB_PATH = Path("audit_history.db")
-REPORTS_DIR = Path("reports")
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "audit_history.db"
+REPORTS_DIR = BASE_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
 
 SCORE_FILTERS = {

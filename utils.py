@@ -1,4 +1,6 @@
+import ipaddress
 import re
+import socket
 import time
 from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -56,6 +58,82 @@ class AuditError(Exception):
         self.status_code = status_code
 
 
+def _is_blocked_ip(address: ipaddress._BaseAddress) -> bool:
+    return (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_private
+        or address.is_unspecified
+    )
+
+
+def _validate_host(host: str) -> None:
+    normalized_host = (host or "").strip().rstrip(".").lower()
+    if not normalized_host:
+        raise AuditError("Invalid URL", "The website URL is missing a hostname.")
+    if normalized_host in {"localhost", "localhost.localdomain"}:
+        raise AuditError(
+            "Invalid URL",
+            "Localhost URLs are not permitted for security reasons.",
+        )
+
+    try:
+        parsed_ip = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        parsed_ip = None
+
+    if parsed_ip is not None:
+        if _is_blocked_ip(parsed_ip):
+            raise AuditError(
+                "Invalid URL",
+                "The provided URL points to a blocked internal or local address.",
+            )
+        return
+
+    try:
+        resolved_addresses = socket.getaddrinfo(normalized_host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise AuditError(
+            "Invalid URL",
+            "We could not resolve the website host to a safe public address.",
+        ) from exc
+
+    for _, _, _, _, sockaddr in resolved_addresses:
+        ip_address = sockaddr[0]
+        try:
+            resolved_ip = ipaddress.ip_address(ip_address)
+        except ValueError:
+            continue
+        if _is_blocked_ip(resolved_ip):
+            raise AuditError(
+                "Invalid URL",
+                "The hostname resolves to a blocked internal or local address.",
+            )
+
+
+def validate_url(url: str) -> str:
+    if not url:
+        raise AuditError("Invalid URL", "Please enter a website URL.")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise AuditError(
+            "Invalid URL",
+            "Please enter a safe HTTP or HTTPS website URL.",
+        )
+    if not parsed.netloc:
+        raise AuditError("Invalid URL", "Please enter a complete website URL.")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise AuditError("Invalid URL", "The website URL is missing a hostname.")
+
+    _validate_host(hostname)
+    return parsed.geturl()
+
+
 def normalize_url(url: str) -> str:
     url = (url or "").strip()
     if url and not url.lower().startswith(("http://", "https://")):
@@ -64,18 +142,48 @@ def normalize_url(url: str) -> str:
 
 
 def is_valid_url(url: str) -> bool:
-    return bool(validators.url(url))
+    try:
+        validate_url(url)
+    except AuditError:
+        return False
+    return True
+
+
+def _safe_request(url: str, *, method: str = "GET", timeout: int = REQUEST_TIMEOUT, allow_redirects: bool = True):
+    current_url = validate_url(url)
+    session = requests.Session()
+    redirect_count = 0
+    while True:
+        response = session.request(
+            method,
+            current_url,
+            headers=REQUEST_HEADERS,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+        response.url = current_url
+        if not allow_redirects:
+            return response
+        if response.is_redirect or response.is_permanent_redirect:
+            redirect_count += 1
+            if redirect_count > 5:
+                raise AuditError(
+                    "Too Many Redirects",
+                    "The website redirected too many times, so the audit was stopped for safety.",
+                )
+            location = response.headers.get("Location")
+            if not location:
+                return response
+            current_url = urljoin(current_url, location)
+            validate_url(current_url)
+            continue
+        return response
 
 
 def fetch_website(url: str) -> Dict:
     start = time.perf_counter()
     try:
-        response = requests.get(
-            url,
-            headers=REQUEST_HEADERS,
-            timeout=REQUEST_TIMEOUT,
-            allow_redirects=True,
-        )
+        response = _safe_request(url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
         response_time = round((time.perf_counter() - start) * 1000)
         return {"response": response, "response_time_ms": response_time}
     except requests.exceptions.SSLError as exc:
@@ -133,9 +241,9 @@ def images_without_alt(soup: BeautifulSoup) -> List[str]:
 def resource_exists(base_url: str, path: str) -> bool:
     try:
         url = urljoin(base_url.rstrip("/") + "/", path)
-        response = requests.get(url, headers=REQUEST_HEADERS, timeout=6)
+        response = _safe_request(url, timeout=6, allow_redirects=True)
         return response.status_code == 200
-    except requests.RequestException:
+    except (AuditError, requests.RequestException):
         return False
 
 
@@ -274,15 +382,10 @@ def check_broken_images(soup: BeautifulSoup, base_url: str, limit: int = 12) -> 
 
     for src in image_sources[:limit]:
         try:
-            response = requests.head(
-                src,
-                headers=REQUEST_HEADERS,
-                timeout=5,
-                allow_redirects=True,
-            )
+            response = _safe_request(src, method="HEAD", timeout=5, allow_redirects=True)
             if response.status_code >= 400:
                 broken.append(src)
-        except requests.RequestException:
+        except (AuditError, requests.RequestException):
             broken.append(src)
     return broken
 
