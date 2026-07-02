@@ -43,23 +43,85 @@ A production-ready Flask web application that audits a business website and pres
 
 ## Scoring Logic
 
-The audit score is divided into five categories:
+The website audit score is calculated across five categories.
 
-- SEO
-- Technical Basics
-- Contact Readiness
-- Social Presence
-- Conversion Readiness
+ Category             Maximum Score 
 
-Each individual check contributes points to its category. Passing checks add their configured points, while missing checks do not. The final score is calculated by summing all earned points across categories and comparing them against the maximum available score of 100.
+  SEO                     30 
+  Technical Basics        25 
+  Social Presence         15 
+  Contact Readiness       15 
+  Conversion Readiness    15 
 
-## Security
+Each audit check contributes predefined points to its category.
 
-The application validates every submitted URL before any outbound HTTP request is made. Blocked targets include localhost, private IP ranges, loopback addresses, internal networks, file URLs, data URLs, ftp URLs, javascript URLs, and unsafe redirects. These protections reduce the risk of Server-Side Request Forgery (SSRF) by preventing the audit engine from reaching internal services or other unsafe destinations.
+Examples include:
+
+- Page Title
+- Meta Description
+- H1 Tag
+- HTTPS
+- robots.txt
+- sitemap.xml
+- Open Graph Tags
+- Contact Information
+- Social Media Presence
+- Call-to-Action
+- Newsletter Form
+
+The overall score is calculated by summing the scores earned across all categories.
+
+## Security (SSRF Protection)
+
+To improve application security, SSRF (Server-Side Request Forgery) protection has been implemented before any website is audited.
+
+The application:
+
+- Accepts only HTTP and HTTPS URLs.
+- Blocks localhost (localhost, 127.0.0.1, ::1).
+- Blocks private and internal IP ranges:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - Link-local, multicast, reserved, and unspecified addresses.
+- Blocks unsupported URL schemes such as:
+  - file://
+  - data:
+  - ftp://
+  - javascript:
+  - gopher:
+  - smb:
+  - ldap:
+- Resolves hostnames before making requests to ensure they do not point to blocked IP addresses.
+- Validates redirects and blocks redirects to internal or private network addresses.
+
+These measures help reduce the risk of Server-Side Request Forgery (SSRF) attacks while allowing legitimate public websites to be audited.
 
 ## Development Notes
 
-The core Flask application, audit engine, SQLite history storage, report generation, and Bootstrap-based UI were implemented by me. Some debugging, documentation improvements, UI refinements, and code suggestions were assisted by AI coding tools. I reviewed, integrated, tested, and validated every change before finalizing the project.
+This project was designed, implemented, and integrated by me using Flask, BeautifulSoup, Requests, SQLite, Bootstrap, and Python.
+
+I personally developed:
+
+- Project architecture
+- Flask application
+- Audit workflow
+- Website analysis logic
+- Report generation
+- SQLite audit history
+- HTML user interface
+- Deployment on Render
+- Testing and debugging
+
+AI tools (including ChatGPT) were used as development assistants for:
+
+- Brainstorming implementation ideas
+- Debugging specific issues
+- Improving documentation
+- Refining parts of the user interface
+- Suggesting secure coding practices such as SSRF protection
+
+All AI-generated suggestions were reviewed, modified where necessary, integrated, tested, and validated by me before being committed to the project.
 
 ## Folder Structure
 
@@ -139,7 +201,7 @@ python app.py
 2. Open the app in a browser.
 
 ```text
-http://127.0.0.1:5000
+https://business-digital-audit-tool.onrender.com/
 ```
 
 3. Enter:
@@ -175,6 +237,34 @@ The `python app.py` command defaults to debug mode off. To enable debug only dur
 $env:FLASK_DEBUG="1"
 python app.py
 ```
+
+## Automated Testing
+
+The project includes automated tests using pytest.
+
+Audit Logic Tests:
+- Page title detection
+- Meta description detection
+- H1 detection
+- HTTPS validation
+- robots.txt detection
+- sitemap.xml detection
+- Open Graph detection
+- Mobile viewport detection
+
+Flask Route Tests:
+- Home page
+- Audit endpoint
+- Audit history page
+
+All automated tests pass successfully.
+
+Example:
+
+pytest -q
+
+11 passed
+
 
 ## Screenshots
 
